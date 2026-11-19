@@ -1,0 +1,26 @@
+2026-11-18T10:38:02.114Z INFO  [order-service] Started OrderServiceApplication in 4.21 seconds
+2026-11-18T10:38:15.402Z INFO  [order-service] POST /orders orderId=ord-1001 status=201 latency_ms=48
+2026-11-18T10:38:21.877Z INFO  [order-service] POST /orders orderId=ord-1002 status=201 latency_ms=52
+2026-11-18T10:38:40.019Z WARN  [order-service] Deprecated config property 'spring.redis.timeout' used; prefer 'spring.data.redis.timeout'
+2026-11-18T10:39:03.556Z INFO  [order-service] GET /orders/ord-1001 status=200 latency_ms=6 cache=HIT
+2026-11-18T10:39:47.230Z INFO  [order-service] POST /orders orderId=ord-1003 status=201 latency_ms=50
+2026-11-18T10:40:12.845Z INFO  [order-service] GET /orders/ord-1003 status=200 latency_ms=5 cache=HIT
+2026-11-18T10:40:55.301Z WARN  [order-service] Slow HTTP call to payment-service latency_ms=812 (threshold 800)
+2026-11-18T10:41:30.664Z INFO  [order-service] POST /orders orderId=ord-1004 status=201 latency_ms=55
+2026-11-18T10:42:04.118Z WARN  [order-service] Redis command GET took 1450 ms (threshold 100 ms)
+2026-11-18T10:42:09.472Z ERROR [order-service] Redis command timed out after 2000 ms: io.lettuce.core.RedisCommandTimeoutException: Command timed out after 2 second(s)
+2026-11-18T10:42:09.475Z ERROR [order-service] GET /orders/ord-1002 status=500 latency_ms=2011 error="Unable to read from cache"
+2026-11-18T10:42:15.903Z ERROR [order-service] Redis command timed out after 2000 ms: io.lettuce.core.RedisCommandTimeoutException: Command timed out after 2 second(s)
+2026-11-18T10:42:15.906Z ERROR [order-service] POST /orders orderId=ord-1005 status=500 latency_ms=2004 error="Unable to write to cache"
+2026-11-18T10:42:31.220Z WARN  [order-service] Redis connection pool: active=8/8 idle=0 waiting=14
+2026-11-18T10:42:44.581Z ERROR [order-service] Redis command timed out after 2000 ms: io.lettuce.core.RedisCommandTimeoutException: Command timed out after 2 second(s)
+2026-11-18T10:42:44.583Z ERROR [order-service] GET /orders/ord-1004 status=500 latency_ms=2009 error="Unable to read from cache"
+2026-11-18T10:43:02.917Z INFO  [order-service] GET /health status=200 latency_ms=3
+2026-11-18T10:43:10.440Z ERROR [order-service] Redis connection pool exhausted: Could not get a resource from the pool (waited 3000 ms)
+2026-11-18T10:43:10.442Z ERROR [order-service] POST /orders orderId=ord-1006 status=500 latency_ms=3005 error="Unable to write to cache"
+2026-11-18T10:43:25.006Z WARN  [order-service] Redis connection pool: active=8/8 idle=0 waiting=31
+2026-11-18T10:43:41.773Z ERROR [order-service] Redis command timed out after 2000 ms: io.lettuce.core.RedisCommandTimeoutException: Command timed out after 2 second(s)
+2026-11-18T10:43:41.776Z ERROR [order-service] GET /orders/ord-1003 status=500 latency_ms=2012 error="Unable to read from cache"
+2026-11-18T10:44:00.129Z INFO  [order-service] Kafka producer metrics: records_sent=6 errors=0
+2026-11-18T10:44:18.664Z ERROR [order-service] Redis connection pool exhausted: Could not get a resource from the pool (waited 3000 ms)
+2026-11-18T10:44:18.667Z ERROR [order-service] POST /orders orderId=ord-1007 status=500 latency_ms=3004 error="Unable to write to cache"
