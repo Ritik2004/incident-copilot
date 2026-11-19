@@ -5,6 +5,49 @@ Newest day at the top.
 
 ---
 
+## Day 2 (Nov 19): the agent loop 🔁
+
+**Goal:** stop calling the LLM a fixed number of times. Keep going until the LLM says "I'm done."
+
+### Why
+A real engineer doesn't stop at the first symptom. "Redis is timing out" isn't a root cause; *why* is Redis slow? The number of steps isn't known in advance, so the code needs a **loop**.
+
+### What I built
+```
+repeat (max 5 times):
+    ask the LLM (with the full history + tools)
+    no tool calls?  → that's the final answer → return it
+    tool calls?     → run each tool → add results to history → go round again
+```
+I also added a `redis.log` with a deeper problem hidden in it.
+
+### 🎉 The result
+```
+Step 1: read_logs({'service': 'order-service'})   → sees Redis timeouts
+Step 2: read_logs({'service': 'redis'})           → decided ON ITS OWN to check Redis
+FINAL: analytics-job runs `KEYS order:*`, which blocks Redis's single thread for ~1.9 s
+       → order-service times out → connection pool exhausted → HTTP 500s
+```
+`analytics-job` appears **only** in the Redis logs. A single call could never have found it.
+
+### 🐛 Bugs of the day
+1. **`msg.tool_calls[0] == ""` crashed.** When the LLM gives its final answer, `tool_calls` is `None` (Python's `null`), and `None[0]` raises `TypeError`. Fix: `if not msg.tool_calls:`, which is true for `None` *and* an empty list.
+2. **`429 RateLimitError`, only sometimes.** The Groq free tier allows 8,000 tokens per minute, and one run uses ~5,000+. Fix for now: `Groq(..., max_retries=5)` and don't run back-to-back.
+
+### 🧠 What I learned
+- **An agent = an LLM + tools + a loop.** The loop ends when the LLM stops asking for tools.
+- **`max_steps` is a safety limit.** Without it, a confused agent could loop (and bill you) forever.
+- **Every step costs more than the last.** The LLM has no memory, so the full history (all the logs so far) is re-sent every step. That's why real agents trim or summarize tool results.
+- **The system prompt shapes behaviour.** "Don't stop at the first symptom: keep digging" is what makes it go one level deeper.
+- The LLM can ask for **several tools in one turn**, so we loop over `msg.tool_calls`.
+
+### ⏭️ Next
+More tools (`get_metrics`, `get_recent_deploys`) and a **name → function dict**, so the agent can choose between tools. Plus handling bad tool calls without crashing.
+
+**Code:** [app/agent.py](app/agent.py)
+
+---
+
 ## Day 1 (Nov 18–19): the first tool call
 
 **Goal:** get an LLM to investigate an incident by *asking* for the logs it needs.

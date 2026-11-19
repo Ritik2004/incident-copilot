@@ -75,7 +75,7 @@ We inject real failures (Redis going down, slow databases, bad deploys, memory l
 
 | Week | What gets built | Status |
 |---|---|---|
-| 1 | First tool call → a full agent loop, written from scratch (no frameworks) | 🟡 In progress |
+| 1 | First tool call → a full agent loop, written from scratch (no frameworks) | ✅ Loop works |
 | 1 | The demo microservice system + failure injection | ⬜ |
 | 2 | More tools (metrics, deploys), memory, first automated evals | ⬜ |
 | 3 | Multi-agent supervisor (LangGraph), human approval, runbook search via **MCP** | ⬜ |
@@ -87,7 +87,8 @@ We inject real failures (Redis going down, slow databases, bad deploys, memory l
 - [x] `read_logs` tool: reads a service's logs
 - [x] The LLM finds the root cause from the logs (and ignores red herrings)
 - [x] **First tool call:** the LLM decides which logs to read; my code runs the tool and sends the result back
-- [ ] The agent loop: keep investigating until done
+- [x] **The agent loop:** keeps investigating until done (max 5 steps). It goes from order-service → Redis on its own and finds the real culprit: a blocking `KEYS` command from an analytics job
+- [ ] Multiple tools (metrics, deploys) + choosing between them
 
 ---
 
@@ -111,10 +112,11 @@ cd incident-copilot
 python3 -m venv venv && source venv/bin/activate
 pip install groq python-dotenv
 echo "GROQ_API_KEY=your_key_here" > .env     # free key at console.groq.com
-python -m app.agent_v0
+python -m app.agent
 ```
 
-It reads a sample incident from [data/logs/order-service.log](data/logs/order-service.log) and prints the root cause.
+It investigates a sample incident in [data/logs/](data/logs/), printing each step it takes, then the root cause.
+(`app/agent_v0.py` is the Day 1 single-tool-call version, kept for comparison.)
 
 ---
 
@@ -122,6 +124,7 @@ It reads a sample incident from [data/logs/order-service.log](data/logs/order-se
 
 - **The LLM never runs your code.** It only *asks* ("please run `read_logs` for order-service"). Your code decides whether and how to run it. That's also why tool calling is a safety boundary.
 - **A tool's description is the LLM's only documentation.** My description said `order_service`, so the LLM asked for `order_service` instead of `order-service`. The file wasn't found and the agent gave up. One better sentence fixed it.
+- **Every agent step costs more than the last.** The LLM has no memory, so the whole history (every log it has read) is re-sent each step. My first runs hit Groq's free-tier limit of 8,000 tokens per minute.
 - **Don't use an agent if a fixed workflow will do.** Agents are slower, cost more and are harder to test. They're worth it here because *what to check next depends on what you just found*.
 
 More in the [daily log](DAILY_LOG.md).

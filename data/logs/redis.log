@@ -1,0 +1,15 @@
+2026-11-18T10:30:00.001Z INFO  [redis] Background saving started by pid 412
+2026-11-18T10:30:01.954Z INFO  [redis] Background saving terminated with success
+2026-11-18T10:35:12.330Z INFO  [redis] Memory usage: used_memory=412mb maxmemory=2gb connected_clients=9
+2026-11-18T10:40:00.002Z INFO  [redis] Background saving started by pid 418
+2026-11-18T10:40:02.117Z INFO  [redis] Background saving terminated with success
+2026-11-18T10:41:55.408Z INFO  [redis] Accepted connection from 10.0.3.17:51022 (client name: analytics-job)
+2026-11-18T10:41:58.112Z WARN  [redis] Slow command: KEYS order:* took 1840 ms (client=analytics-job 10.0.3.17) - command blocks the server while it runs
+2026-11-18T10:42:06.540Z WARN  [redis] Slow command: KEYS order:* took 1912 ms (client=analytics-job 10.0.3.17) - command blocks the server while it runs
+2026-11-18T10:42:14.871Z WARN  [redis] Slow command: KEYS order:* took 1877 ms (client=analytics-job 10.0.3.17) - command blocks the server while it runs
+2026-11-18T10:42:30.004Z INFO  [redis] Memory usage: used_memory=418mb maxmemory=2gb connected_clients=24
+2026-11-18T10:42:43.219Z WARN  [redis] Slow command: KEYS order:* took 1935 ms (client=analytics-job 10.0.3.17) - command blocks the server while it runs
+2026-11-18T10:43:09.662Z WARN  [redis] Slow command: KEYS order:* took 1958 ms (client=analytics-job 10.0.3.17) - command blocks the server while it runs
+2026-11-18T10:43:40.090Z WARN  [redis] Slow command: KEYS order:* took 1901 ms (client=analytics-job 10.0.3.17) - command blocks the server while it runs
+2026-11-18T10:44:17.385Z WARN  [redis] Slow command: KEYS order:* took 1966 ms (client=analytics-job 10.0.3.17) - command blocks the server while it runs
+2026-11-18T10:44:30.001Z INFO  [redis] Memory usage: used_memory=421mb maxmemory=2gb connected_clients=41

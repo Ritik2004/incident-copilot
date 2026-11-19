@@ -52,7 +52,39 @@ My tool description mentioned `order_service`, so the LLM asked for `order_servi
 
 ---
 
-## 3. The project pitch (have this ready)
+## 3. The agent loop
+
+**⭐ Write a minimal agent loop (whiteboard).**
+```python
+for step in range(max_steps):
+    msg = llm(messages, tools)
+    if not msg.tool_calls:          # no request → final answer
+        return msg.content
+    messages.append(msg)
+    for tc in msg.tool_calls:
+        result = TOOLS[tc.function.name](**json.loads(tc.function.arguments))
+        messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
+return "stopped: max steps"
+```
+
+**⭐ How does the agent know it's done?**
+The LLM replies without `tool_calls`, just text. That's the final answer.
+
+**⭐ Why do you need `max_steps`?**
+A confused agent can loop forever (re-reading the same logs, retrying a failing tool), and every step costs money and time. `max_steps` is a hard stop. Others: a token/cost budget, a timeout, detecting repeated identical calls.
+
+**⭐ Why does each agent step get more expensive?**
+The LLM is stateless, so every call re-sends the whole history, including every tool result so far. Tokens per call grow with each step. Fixes: return only relevant data from tools (e.g. ERROR/WARN lines), truncate or summarize old tool results, and cap steps.
+
+**Your agent hit a `429`. What is it and how do you handle it?**
+A rate limit (my Groq free tier: 8,000 tokens/minute). Handle it with retries plus exponential backoff (respect the `retry-after` hint), a fallback model or provider, smaller prompts, and queuing requests instead of firing them all at once.
+
+**How did your agent find a root cause a single LLM call couldn't?**
+The order-service logs only showed Redis timeouts. The agent decided on its own to read the Redis logs, found an `analytics-job` running `KEYS order:*` (which blocks Redis's single thread), and correlated timestamps. That second step depended on what the first step found, which is exactly when an agent is justified.
+
+---
+
+## 4. The project pitch (have this ready)
 
 **⭐ "Tell me about a project you built."**
 > *"I'm building an AI SRE: a multi-agent system that investigates production incidents. An alert comes in, a supervisor agent sends specialist agents to check logs, metrics, recent deploys and runbooks, and it produces a root-cause report with evidence. Risky actions like restarts need human approval. I test it by injecting real failures into a Spring Boot + Kafka + Redis system, and since each failure has a known root cause, I can measure accuracy."*
