@@ -5,6 +5,50 @@ Newest day at the top.
 
 ---
 
+## Day 3 (Nov 20–21): three tools, and the agent picks 🧰
+
+**Goal:** give the agent the 3 questions a real on-call engineer asks: *what do the logs say?*, *what do the numbers say?*, *what changed?*
+
+### What I built
+- 🆕 `get_metrics(service)`: per-minute error rate, latency and traffic (from `data/metrics.json`)
+- 🆕 `get_recent_deploys()`: recent deploys across all services (from `data/deploys.json`), a tool with **no parameters**
+- 🆕 a **`TOOLS` dict** mapping the name the LLM asks for → the Python function:
+  ```python
+  TOOLS = {"read_logs": read_logs, "get_metrics": get_metrics, "get_recent_deploys": get_recent_deploys}
+  func = TOOLS.get(name)        # returns None (not a crash) if the LLM invents a tool
+  result = func(**args)         # {"service": "redis"} → func(service="redis")
+  ```
+- 🆕 **error handling:** unknown tool → error message; bad arguments or a crashing tool → `try/except` → error message. The agent never crashes; the LLM reads the error and adapts.
+
+### 🎉 The result
+```
+Step 1: get_metrics(order-service)   → errors jumped at 10:42
+Step 2: read_logs(order-service)     → Redis timeouts
+Step 3: get_metrics(redis)           → Redis latency 2 ms → 1890 ms
+Step 4: get_recent_deploys({"":""})  → the LLM sent BROKEN arguments → error returned, no crash
+Step 5: get_recent_deploys({})       → the LLM fixed its own mistake
+FINAL: analytics-job v2.3.0 deployed at 10:41:30 (KEYS order:*) → Redis blocked → order-service 500s
+```
+It ignored the two unrelated deploys (payment-service timeout change, order-service TTL config).
+
+### 🐛 Bugs of the day
+1. **`json.dump` vs `json.dumps`.** `dump` writes to a *file*; `dumps` returns a *string* (the `s` = string). The LLM needs a string.
+2. **`func = ...` left in.** `...` isn't a function, so every call failed and the LLM retried the *same* call 5 times until `max_steps` stopped it. Lesson: `max_steps` really matters, and real agents also stop on repeated identical failures.
+3. **`tools` / `Tools` vs `TOOLS`.** Python is case-sensitive. Worse, VS Code "helpfully" auto-added `from asyncio import tools`, which crashed on start. Always check imports you didn't write.
+
+### 🧠 What I learned
+- **A real investigation uses several sources:** metrics (*when* and *how bad*), logs (*what* is failing), deploys (*what changed*). Most incidents are caused by a change.
+- **Dispatching tools:** the LLM returns a *name*, and a dict maps the name → function. Adding a tool = write the function + schema + one dict entry.
+- **Never let a tool crash the agent.** Return the error as text; the LLM can often recover on its own.
+- Python: `try/except` = try/catch · `dict.get(key)` returns `None` instead of raising · `**args` unpacks a dict into named arguments · ALL_CAPS = a constant.
+
+### ⏭️ Next
+The weekend: the **Java demo system** (Spring Boot + Kafka + Redis + Postgres + Prometheus) that we can break for real. Then the tools stop reading fake files and read the real system.
+
+**Code:** [app/agent.py](app/agent.py) · **Data:** [data/metrics.json](data/metrics.json), [data/deploys.json](data/deploys.json)
+
+---
+
 ## Day 2 (Nov 19): the agent loop 🔁
 
 **Goal:** stop calling the LLM a fixed number of times. Keep going until the LLM says "I'm done."

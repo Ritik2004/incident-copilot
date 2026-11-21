@@ -1,0 +1,23 @@
+{
+  "order-service": [
+    {"time": "10:38", "error_rate_pct": 0.2, "p95_latency_ms": 55, "requests_per_min": 120},
+    {"time": "10:40", "error_rate_pct": 0.3, "p95_latency_ms": 58, "requests_per_min": 118},
+    {"time": "10:41", "error_rate_pct": 0.2, "p95_latency_ms": 61, "requests_per_min": 121},
+    {"time": "10:42", "error_rate_pct": 6.8, "p95_latency_ms": 2010, "requests_per_min": 119},
+    {"time": "10:43", "error_rate_pct": 9.4, "p95_latency_ms": 3004, "requests_per_min": 117},
+    {"time": "10:44", "error_rate_pct": 11.2, "p95_latency_ms": 3006, "requests_per_min": 120}
+  ],
+  "payment-service": [
+    {"time": "10:38", "error_rate_pct": 0.1, "p95_latency_ms": 640, "requests_per_min": 60},
+    {"time": "10:40", "error_rate_pct": 0.1, "p95_latency_ms": 790, "requests_per_min": 62},
+    {"time": "10:42", "error_rate_pct": 0.1, "p95_latency_ms": 655, "requests_per_min": 59},
+    {"time": "10:44", "error_rate_pct": 0.1, "p95_latency_ms": 648, "requests_per_min": 61}
+  ],
+  "redis": [
+    {"time": "10:38", "command_latency_p99_ms": 2, "connected_clients": 9, "ops_per_sec": 850, "used_memory_mb": 412},
+    {"time": "10:40", "command_latency_p99_ms": 2, "connected_clients": 9, "ops_per_sec": 870, "used_memory_mb": 413},
+    {"time": "10:42", "command_latency_p99_ms": 1890, "connected_clients": 24, "ops_per_sec": 95, "used_memory_mb": 418},
+    {"time": "10:43", "command_latency_p99_ms": 1950, "connected_clients": 33, "ops_per_sec": 88, "used_memory_mb": 419},
+    {"time": "10:44", "command_latency_p99_ms": 1966, "connected_clients": 41, "ops_per_sec": 91, "used_memory_mb": 421}
+  ]
+}

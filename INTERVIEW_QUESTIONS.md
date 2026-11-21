@@ -84,7 +84,29 @@ The order-service logs only showed Redis timeouts. The agent decided on its own 
 
 ---
 
-## 4. The project pitch (have this ready)
+## 4. Multiple tools + error handling
+
+**⭐ How does your code run the right tool when there are many?**
+A dict mapping tool name → Python function: `func = TOOLS.get(tool_call.function.name)`, then `func(**args)`. Adding a tool = function + schema + one dict entry.
+
+**⭐ What happens if the LLM calls a tool that doesn't exist, or sends bad arguments?**
+Never crash. Unknown name → return "Error: unknown tool X, available: [...]". Bad JSON or a wrong argument → `try/except` → return the error text as the tool result. The LLM reads it and usually corrects itself. My agent once sent `{"": ""}` to a no-argument tool, got the error, and retried correctly with `{}` on the next step.
+
+**Why return errors to the LLM instead of raising?**
+The LLM can recover (retry, try another tool, or explain what it couldn't do). An exception just kills the run. Same idea as returning a proper error response from an API instead of a 500.
+
+**⭐ My agent called the same failing tool 5 times in a row. What guards stop that?**
+`max_steps` (it stopped it here), plus detecting repeated identical calls (same name + args failing twice → stop or tell the LLM to try something else), and a token/cost budget.
+
+**How do you decide what tools an agent needs?**
+Mirror how an expert works. An SRE asks: what do the metrics say (when, how bad), what do the logs say (what's failing), what changed (deploys). One tool per question, with clear descriptions and narrow parameters.
+
+**Too many tools: what goes wrong?**
+The model picks the wrong tool more often, and every tool schema costs tokens on every call. Keep tool sets small and descriptions distinct; split into specialist agents when the list grows (that's where multi-agent comes in).
+
+---
+
+## 5. The project pitch (have this ready)
 
 **⭐ "Tell me about a project you built."**
 > *"I'm building an AI SRE: a multi-agent system that investigates production incidents. An alert comes in, a supervisor agent sends specialist agents to check logs, metrics, recent deploys and runbooks, and it produces a root-cause report with evidence. Risky actions like restarts need human approval. I test it by injecting real failures into a Spring Boot + Kafka + Redis system, and since each failure has a known root cause, I can measure accuracy."*

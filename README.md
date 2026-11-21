@@ -88,7 +88,9 @@ We inject real failures (Redis going down, slow databases, bad deploys, memory l
 - [x] The LLM finds the root cause from the logs (and ignores red herrings)
 - [x] **First tool call:** the LLM decides which logs to read; my code runs the tool and sends the result back
 - [x] **The agent loop:** keeps investigating until done (max 5 steps). It goes from order-service → Redis on its own and finds the real culprit: a blocking `KEYS` command from an analytics job
-- [ ] Multiple tools (metrics, deploys) + choosing between them
+- [x] **Three tools** (logs, metrics, recent deploys). The agent picks which to use and finds *what changed*: an `analytics-job` deploy at 10:41:30
+- [x] **Never crashes on a bad tool call.** Errors go back to the LLM, which corrects itself
+- [ ] The demo system: real Spring Boot + Kafka + Redis services to break on purpose
 
 ---
 
@@ -125,6 +127,7 @@ It investigates a sample incident in [data/logs/](data/logs/), printing each ste
 - **The LLM never runs your code.** It only *asks* ("please run `read_logs` for order-service"). Your code decides whether and how to run it. That's also why tool calling is a safety boundary.
 - **A tool's description is the LLM's only documentation.** My description said `order_service`, so the LLM asked for `order_service` instead of `order-service`. The file wasn't found and the agent gave up. One better sentence fixed it.
 - **Every agent step costs more than the last.** The LLM has no memory, so the whole history (every log it has read) is re-sent each step. My first runs hit Groq's free-tier limit of 8,000 tokens per minute.
+- **Never let a tool crash the agent.** My agent once sent broken arguments. Instead of crashing, the error went back to it as text, and it fixed its own call on the next step.
 - **Don't use an agent if a fixed workflow will do.** Agents are slower, cost more and are harder to test. They're worth it here because *what to check next depends on what you just found*.
 
 More in the [daily log](DAILY_LOG.md).

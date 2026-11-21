@@ -1,0 +1,30 @@
+# The demo shop. Start everything:  docker compose up --build
+services:
+  order-service:
+    build: ./order-service      # build the image from order-service/Dockerfile
+    container_name: order-service
+    ports:
+      - "8080:8080"             # laptop port : container port
+    depends_on:
+      - redis                   # start these first
+      - payment-service
+
+  payment-service:
+    build: ./payment-service
+    container_name: payment-service
+    ports:
+      - "8081:8080"             # laptop 8081 → container 8080 (8080 on the laptop is taken by order-service)
+
+  redis:
+    image: redis:7              # ready-made image from Docker Hub, nothing to build
+    container_name: redis
+    ports:
+      - "6379:6379"
+
+  prometheus:
+    image: prom/prometheus:v3.1.0   # ready-made image
+    container_name: prometheus
+    ports:
+      - "9090:9090"                 # open http://localhost:9090
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml   # give it our config file
