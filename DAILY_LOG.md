@@ -5,6 +5,61 @@ Newest day at the top.
 
 ---
 
+## Day 5 (Nov 22): the agent investigates a REAL incident 🕵️
+
+**Goal:** stop reading fake files. Point the agent's tools at the real shop from Day 4.
+
+### What I built (this time I wrote the code myself)
+| Tool | Before | Now |
+|---|---|---|
+| `read_logs(service)` | opened a fake `.log` file | runs `docker logs`, keeps only **ERROR/WARN** lines, last 30 |
+| `get_metrics(service)` | opened a fake `metrics.json` | asks **Prometheus** for request counts by status (hides Prometheus's own `/actuator` requests) |
+| 🆕 `get_service_status()` | — | runs `docker ps -a`: which services are **Up** and which have **Exited** |
+| `get_recent_deploys()` | fake deploys | **removed** for now. Fake data would mislead the agent on a real system |
+
+- First plug-and-play setting: `PROMETHEUS_URL` comes from `.env` (default `localhost:9090`), so anyone can point it at their own Prometheus.
+
+### 🎉 The result: two runs, same incident (Redis stopped)
+
+**Run 1** (only logs + metrics):
+```
+Step 1: get_metrics(order-service)
+Step 2: read_logs(order-service)        → "Failed to resolve 'redis'"
+Step 3: get_metrics(redis)              → no data
+FINAL: "Redis was renamed in a Kubernetes deployment, run kubectl..."   ❌ made up
+```
+There's no Kubernetes and nothing was renamed. In Docker, a **stopped** container's name disappears from the network, so "can't resolve redis" just meant **Redis wasn't running**. The agent had no tool to check that, so it **guessed** the most common story from its training.
+
+**Run 2** (+ `get_service_status` + a stricter prompt):
+```
+Step 1: get_metrics(order-service)      → 500s with RedisConnectionFailureException
+Step 2: read_logs(order-service)        → "Cannot reconnect to redis", "Redis command timed out"
+Step 3: get_service_status()            → redis: Exited (0) About an hour ago
+FINAL: "Redis container exited → order-service can't connect → 500s. Restart Redis, check why it exited." ✅
+```
+
+### 🐛 Bugs of the day
+1. **`--tail` without a number.** `docker logs --tail order-service` treats the service name as the number.
+2. **A missing container looked "healthy".** Docker says `Error response...` (not `ERROR`), so my filter found nothing and returned "no errors". Fix: check `returncode` first. **A wrong answer that looks right is the worst kind of bug.**
+3. **`http_server__requests`** (two underscores). Prometheus doesn't complain, it just returns nothing.
+4. **441 "successful requests"** were Prometheus scraping itself. Filtered with `uri!~"/actuator.*"`.
+5. **The prompt mentioned a deploys tool that no longer existed.** The prompt and the tools must match.
+
+### 🧠 What I learned
+- **An agent is only as good as its tools.** When it can't check something, it guesses, and the guess sounds confident.
+- **Ground the prompt:** "only claim what the evidence shows, say what you don't know, don't assume an environment."
+- **How the LLM picks a tool:** only from the name + description + what it has seen so far. It never sees the code.
+- **Filter before the LLM sees it**, for logs (219 → 8 lines) and metrics (hide self-scrapes). Less noise = better answers + fewer tokens.
+- Python: `subprocess.run` (like `ProcessBuilder`), list comprehensions (like `stream().filter()`), slicing `[-30:]`, `httpx.get(..., params=...)`, `{{ }}` inside f-strings, `if __name__ == "__main__"` (like `main`).
+- Agent patterns: my loop **is** the ReAct pattern (reason → act → observe → repeat).
+
+### ⏭️ Next
+Step 2: a **structured report** (root cause, evidence, confidence, suggested action) instead of free text, so a UI, Slack, or an eval can read it.
+
+**Code:** [app/agent.py](app/agent.py)
+
+---
+
 ## Day 4 (Nov 21): a real system to break 💥
 
 **Goal:** stop investigating fake files. Build a small real "shop" that I can break on purpose.

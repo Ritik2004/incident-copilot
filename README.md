@@ -92,7 +92,8 @@ We inject real failures (Redis going down, slow databases, bad deploys, memory l
 - [x] **Never crashes on a bad tool call.** Errors go back to the LLM, which corrects itself
 - [x] **The demo system:** order-service + payment-service (Spring Boot) + Redis + Prometheus, started with one `docker compose up`
 - [x] **Chaos switches:** make payments fail or slow down with one curl, and see real errors in the logs and metrics
-- [ ] The agent reads the **real** system (docker logs + Prometheus) instead of sample files
+- [x] **The agent reads the real system:** `docker logs` (ERROR/WARN only), Prometheus metrics, and which containers are up or down. It correctly found "Redis container exited" on a live incident
+- [ ] A structured incident report (root cause, evidence, confidence, action)
 - [ ] Kafka + notification-service, Postgres
 
 ---
@@ -115,12 +116,13 @@ We inject real failures (Redis going down, slow databases, bad deploys, memory l
 git clone https://github.com/Ritik2004/incident-copilot.git
 cd incident-copilot
 python3 -m venv venv && source venv/bin/activate
-pip install groq python-dotenv
+pip install groq python-dotenv httpx
 echo "GROQ_API_KEY=your_key_here" > .env     # free key at console.groq.com
 python -m app.agent
 ```
 
-It investigates a sample incident in [data/logs/](data/logs/), printing each step it takes, then the root cause.
+It investigates the **live demo shop** below (start it first), printing each step it takes, then the root cause.
+Set `PROMETHEUS_URL` in `.env` to use your own Prometheus (default `http://localhost:9090`).
 (`app/agent_v0.py` is the Day 1 single-tool-call version, kept for comparison.)
 
 ### The demo shop (needs Docker)
@@ -150,5 +152,6 @@ curl -X POST localhost:8081/chaos/reset            # back to normal
 
 - **Most log lines are noise.** When I broke Redis, only 8 of 219 lines were ERROR/WARN. The rest were stack traces. An agent's log tool should filter before sending anything to the LLM.
 - **Always set timeouts.** With no timeout, one slow dependency made every order hang for 20 seconds. A fast error beats a hang.
+- **When an agent can't check, it guesses.** With no way to see whether Redis was running, my agent confidently blamed a Kubernetes rename (I don't use Kubernetes). One `get_service_status` tool plus "only claim what the evidence shows" fixed it.
 
 More in the [daily log](DAILY_LOG.md).

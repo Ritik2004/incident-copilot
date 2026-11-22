@@ -137,7 +137,32 @@ Chaos engineering: inject known failures (a dependency down, latency, errors) an
 
 ---
 
-## 6. The project pitch (have this ready)
+## 6. Agents on real data: grounding and hallucination
+
+**⭐ Your agent hallucinated a root cause. What happened and how did you fix it?**
+Redis was stopped. The logs said `Failed to resolve 'redis'`, and the agent had no tool to check whether Redis was running, so it invented a plausible story: "Redis was renamed in a Kubernetes deployment" (I don't use Kubernetes). I fixed it two ways: (1) a `get_service_status` tool, so it can *check* instead of guessing, and (2) a grounded system prompt: "only state causes supported by tool evidence, say what you don't know, don't assume an environment." The next run correctly said "Redis container exited," with three pieces of evidence.
+
+**⭐ How does the LLM decide which tool to call?**
+From the tool's name, description and parameter schema, plus the system prompt and the conversation so far. It never sees the code. That's why descriptions should say *when* to use the tool ("use this when a service can't connect to a dependency").
+
+**⭐ Why filter tool output before sending it to the LLM?**
+Noise hurts both accuracy and cost. When Redis broke, 211 of 219 log lines were stack traces, and 441 "successful requests" in the metrics were Prometheus scraping itself, which could make the system look healthy. I keep only ERROR/WARN lines (last 30) and exclude `/actuator` requests.
+
+**What's the most dangerous kind of tool bug?**
+A wrong answer that looks valid. My log tool returned "No errors" for a container that didn't exist, because Docker's error text didn't match my `ERROR` filter. The LLM would conclude the service was healthy. Fix: check the command's exit code first and return an explicit error.
+
+**Why must the system prompt match the tools?**
+My prompt still said "check recent deploys" after I removed that tool, which pushed the model toward guessing about deploys. Every instruction in the prompt should be something the agent can actually do.
+
+**What is ReAct?**
+Reason + Act: the model thinks about what it needs, calls a tool, observes the result, and repeats. A tool-calling loop like mine is ReAct in practice.
+
+**How do you make an agent tool reusable by other teams?**
+No hard-coded environment: endpoints like `PROMETHEUS_URL` come from config, sources are pluggable (Docker today, Kubernetes/Loki later), and the tools are read-only by default. Exposing the tools as an MCP server lets any MCP client use them.
+
+---
+
+## 7. The project pitch (have this ready)
 
 **⭐ "Tell me about a project you built."**
 > *"I'm building an AI SRE: a multi-agent system that investigates production incidents. An alert comes in, a supervisor agent sends specialist agents to check logs, metrics, recent deploys and runbooks, and it produces a root-cause report with evidence. Risky actions like restarts need human approval. I test it by injecting real failures into a Spring Boot + Kafka + Redis system, and since each failure has a known root cause, I can measure accuracy."*
