@@ -76,7 +76,7 @@ We inject real failures (Redis going down, slow databases, bad deploys, memory l
 | Week | What gets built | Status |
 |---|---|---|
 | 1 | First tool call → a full agent loop, written from scratch (no frameworks) | ✅ Loop works |
-| 1 | The demo microservice system + failure injection | ⬜ |
+| 1 | The demo microservice system + failure injection | ✅ First version runs |
 | 2 | More tools (metrics, deploys), memory, first automated evals | ⬜ |
 | 3 | Multi-agent supervisor (LangGraph), human approval, runbook search via **MCP** | ⬜ |
 | 4 | Agents as separate services talking over **A2A**, Kafka alert intake, LLM-as-judge | ⬜ |
@@ -90,7 +90,10 @@ We inject real failures (Redis going down, slow databases, bad deploys, memory l
 - [x] **The agent loop:** keeps investigating until done (max 5 steps). It goes from order-service → Redis on its own and finds the real culprit: a blocking `KEYS` command from an analytics job
 - [x] **Three tools** (logs, metrics, recent deploys). The agent picks which to use and finds *what changed*: an `analytics-job` deploy at 10:41:30
 - [x] **Never crashes on a bad tool call.** Errors go back to the LLM, which corrects itself
-- [ ] The demo system: real Spring Boot + Kafka + Redis services to break on purpose
+- [x] **The demo system:** order-service + payment-service (Spring Boot) + Redis + Prometheus, started with one `docker compose up`
+- [x] **Chaos switches:** make payments fail or slow down with one curl, and see real errors in the logs and metrics
+- [ ] The agent reads the **real** system (docker logs + Prometheus) instead of sample files
+- [ ] Kafka + notification-service, Postgres
 
 ---
 
@@ -120,6 +123,21 @@ python -m app.agent
 It investigates a sample incident in [data/logs/](data/logs/), printing each step it takes, then the root cause.
 (`app/agent_v0.py` is the Day 1 single-tool-call version, kept for comparison.)
 
+### The demo shop (needs Docker)
+
+```bash
+cd demo-system
+docker compose up --build                          # order-service :8080, payment-service :8081, Prometheus :9090
+
+curl -X POST localhost:8080/orders                 # → {"orderId": "...", "status": "PAID"}
+
+# break it 💥
+docker stop redis                                  # Redis down
+curl -X POST "localhost:8081/chaos/errors?on=true" # payments fail
+curl -X POST "localhost:8081/chaos/latency?ms=5000" # payments slow
+curl -X POST localhost:8081/chaos/reset            # back to normal
+```
+
 ---
 
 ## 💡 Lessons so far
@@ -129,5 +147,8 @@ It investigates a sample incident in [data/logs/](data/logs/), printing each ste
 - **Every agent step costs more than the last.** The LLM has no memory, so the whole history (every log it has read) is re-sent each step. My first runs hit Groq's free-tier limit of 8,000 tokens per minute.
 - **Never let a tool crash the agent.** My agent once sent broken arguments. Instead of crashing, the error went back to it as text, and it fixed its own call on the next step.
 - **Don't use an agent if a fixed workflow will do.** Agents are slower, cost more and are harder to test. They're worth it here because *what to check next depends on what you just found*.
+
+- **Most log lines are noise.** When I broke Redis, only 8 of 219 lines were ERROR/WARN. The rest were stack traces. An agent's log tool should filter before sending anything to the LLM.
+- **Always set timeouts.** With no timeout, one slow dependency made every order hang for 20 seconds. A fast error beats a hang.
 
 More in the [daily log](DAILY_LOG.md).

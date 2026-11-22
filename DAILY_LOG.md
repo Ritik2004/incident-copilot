@@ -5,6 +5,61 @@ Newest day at the top.
 
 ---
 
+## Day 4 (Nov 21): a real system to break 💥
+
+**Goal:** stop investigating fake files. Build a small real "shop" that I can break on purpose.
+
+### What I built (in `demo-system/`)
+```
+curl → order-service ──▶ Redis (saves the order)
+             └──────────▶ payment-service ("PAID")
+Prometheus collects numbers from both every 5s
+```
+- **order-service** and **payment-service**: two Spring Boot apps, each in its own Docker container
+- **Redis** and **Prometheus**: ready-made images, nothing to build
+- **One command starts everything:** `docker compose up --build`
+- **Chaos switches** in payment-service:
+  ```bash
+  curl -X POST "localhost:8081/chaos/errors?on=true"     # every payment fails
+  curl -X POST "localhost:8081/chaos/latency?ms=5000"    # every payment is slow
+  curl -X POST  localhost:8081/chaos/reset               # back to normal
+  ```
+
+### 💥 Incidents I caused today
+| What I broke | What I saw |
+|---|---|
+| `docker stop redis` | at first, curl **hung for 60s** (default Redis timeout) → added a 2s timeout → fast 500. Log: `QueryTimeoutException: Redis command timed out` |
+| `docker start redis` | **still 500s for ~30s!** The client retries with exponential backoff, so it hadn't reconnected yet. Log: `Reconnected to redis:6379` |
+| payment errors ON | order-service returned 500, but **its own code was fine**. The cause was downstream. |
+| payment latency 20s | each order took **20 seconds**: no timeout on the HTTP call. One slow dependency can freeze the caller (a cascading failure). |
+
+In Prometheus, the metric even named the exception:
+```
+http_server_requests_seconds_count{status="500", exception="RedisConnectionFailureException", uri="/orders"}
+```
+
+### 🐛 Bugs of the day
+1. **Controller not found → 404.** Spring only scans the main class's package and the packages *under* it. VS Code also generated `package main.java.com.shop...`: wrong package, so no endpoint.
+2. **`app.jarx`**: a stray keypress in the Dockerfile → "Unable to access jarfile".
+3. **Prometheus said DOWN (HTTP 406)**: a metrics-format mismatch. Fixed with `scrape_protocols: [PrometheusText0.0.4]`.
+4. **Build failed with no clear reason**: the real error is *higher up*. `docker compose build x 2>&1 | grep "ERROR.*java"` shows the file + line.
+
+### 🧠 What I learned
+- **Dockerfile** = the recipe to pack one app into an image. **docker-compose** = start all the boxes together. Containers find each other **by name** (`redis`, `payment-service`).
+- **Where `docker logs` comes from:** the app prints to the console → Docker saves it → `docker logs` reads it.
+- **Logs vs metrics:** metrics say *when* and *how bad*, logs say *why*.
+- **Only 8 of 219 log lines mattered** (ERROR/WARN). The rest were stack traces. My agent's log tool must filter, or it wastes tokens.
+- **Always set timeouts.** A fast error is better than a hang.
+- **"The dependency is back" ≠ "the service has recovered".** Check for the reconnect.
+
+### ⏭️ Next
+- Add the 2s timeout to the payment call (and watch 20s become 2s)
+- **Rewire my agent** (on my own this time): `read_logs` → real `docker logs` (ERROR/WARN only), `get_metrics` → real Prometheus queries
+
+**Code:** [demo-system/](demo-system/)
+
+---
+
 ## Day 3 (Nov 20–21): three tools, and the agent picks 🧰
 
 **Goal:** give the agent the 3 questions a real on-call engineer asks: *what do the logs say?*, *what do the numbers say?*, *what changed?*

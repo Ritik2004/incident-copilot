@@ -106,7 +106,38 @@ The model picks the wrong tool more often, and every tool schema costs tokens on
 
 ---
 
-## 5. The project pitch (have this ready)
+## 5. The demo system: Docker, observability, failures
+
+**What's the difference between a Dockerfile and docker-compose?**
+The Dockerfile is the recipe for building ONE image (my app + Java). Compose starts SEVERAL containers together and connects them on one network, where they reach each other by container name (`redis:6379`, `payment-service:8080`).
+
+**Why a multi-stage Dockerfile?**
+Stage 1 has Maven and builds the jar. Stage 2 copies only the jar into a small JRE image. The final image doesn't carry Maven or the source code, so it's smaller and has less attack surface.
+
+**Where do `docker logs` come from?**
+The app writes to stdout. Docker captures stdout/stderr and stores it per container. Those logs are lost when the container is removed, so production ships logs to a central store (Loki, ELK, Datadog).
+
+**⭐ Logs vs metrics: when do you use each?**
+Metrics (Prometheus) answer *when* and *how bad*: the error rate jumped at 10:42 to 30%. Logs answer *why*: `Redis command timed out`. Investigate metrics first to find the time window, then read logs from that window.
+
+**How does Prometheus get its data?**
+It **pulls**. Every N seconds it scrapes each service's `/actuator/prometheus` endpoint (Spring Actuator + Micrometer). If a scrape fails, the target shows as DOWN, which is itself a signal.
+
+**⭐ Why does every remote call need a timeout?**
+Without one, a slow dependency makes every request wait, threads pile up, and the caller freezes too: a cascading failure. In my demo, payment latency of 20s made every order take 20s. A timeout (2s) turns a hang into a fast, visible error that can be retried or shown to the user.
+
+**⭐ Redis came back, but the service still failed for 30 seconds. Why?**
+The client reconnects with **exponential backoff** (1s, 2s, 4s… up to ~30s), so it hadn't retried yet. Backoff prevents a "thundering herd" of clients hammering a server that's just recovering. Lesson: a recovered dependency doesn't mean a recovered service, so check for the reconnect.
+
+**Why is `KEYS *` dangerous in production Redis?**
+Redis runs commands on a single thread. `KEYS` scans every key, so on millions of keys it blocks all other commands. Use `SCAN` instead.
+
+**How do you test an incident-response tool?**
+Chaos engineering: inject known failures (a dependency down, latency, errors) and check whether the tool finds the known root cause. Since each failure has a known answer, you get a score.
+
+---
+
+## 6. The project pitch (have this ready)
 
 **⭐ "Tell me about a project you built."**
 > *"I'm building an AI SRE: a multi-agent system that investigates production incidents. An alert comes in, a supervisor agent sends specialist agents to check logs, metrics, recent deploys and runbooks, and it produces a root-cause report with evidence. Risky actions like restarts need human approval. I test it by injecting real failures into a Spring Boot + Kafka + Redis system, and since each failure has a known root cause, I can measure accuracy."*

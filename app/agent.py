@@ -1,17 +1,12 @@
-"""
-Day 3: several tools, and the agent picks which one to use.
-
-Day 2: one tool (read_logs), always called directly.
-Day 3: three tools + a TOOLS dict that maps the name the LLM asks for → the Python function.
-
-Run:   python -m app.agent
-"""
+import subprocess
 import json
 import os
 
+import time
+import httpx
 from dotenv import load_dotenv
 from groq import Groq
-
+PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", "http://localhost:9090")
 load_dotenv()
 client = Groq(api_key=os.getenv("GROQ_API_KEY"), max_retries=5)   # NEW: auto-retry on 429 rate limits
 MODEL = "openai/gpt-oss-20b"
@@ -21,12 +16,33 @@ LOG_DIR = "data/logs"
 # ============================================================================
 # TOOL 1: read_logs (yours, from Day 1)
 # ============================================================================
-def read_logs(service: str) -> str:
-    path = f"{LOG_DIR}/{service}.log"
-    if not os.path.exists(path):
-        return f"No logs found for service: {service}"
-    with open(path) as file:
-        return file.read()
+# def read_logs(service: str) -> str:
+#     path = f"{LOG_DIR}/{service}.log"
+#     if not os.path.exists(path):
+#         return f"No logs found for service: {service}"
+#     with open(path) as file:
+#         return file.read()
+
+def read_logs(service:str) -> str:
+    result = subprocess.run(
+        ["docker","logs","--tail","500",service],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if result.returncode != 0:
+        return f"Could not read logs for {service}: {result.stderr}"
+
+    lines = (result.stdout+result.stderr).splitlines()
+
+    important = [line for line in lines if "ERROR" in line or "WARN" in line]
+
+    if not important:
+        return f"No errors or warning in recent logs for {service}"
+
+    return "\n".join(important[-30:])
+
+
 
 
 read_logs_tool = {
@@ -52,14 +68,28 @@ read_logs_tool = {
 # TOOL 2: get_metrics (NEW, written for you as an example)
 # ============================================================================
 def get_metrics(service: str) -> str:
-    with open("data/metrics.json") as file:
-        all_metrics = json.load(file)          # json.load = read a JSON FILE into a dict (json.loads = from a STRING)
 
-    if service not in all_metrics:             # "key in dict" = Java's map.containsKey(key)
+    # with open("data/metrics.json") as file:
+    #     all_metrics = json.load(file)          # json.load = read a JSON FILE into a dict (json.loads = from a STRING)
+
+    # if service not in all_metrics:             # "key in dict" = Java's map.containsKey(key)
+    #     return f"No metrics found for service: {service}"
+
+    # return json.dumps(all_metrics[service])    # dict/list → JSON string (the LLM only accepts text)
+    query = f'http_server_requests_seconds_count{{job ="{service}", uri!~"/actuator.*"}}'
+
+    response = httpx.get(
+        f"{PROMETHEUS_URL}/api/v1/query",
+        params={"query":query},
+        timeout=5
+    )
+
+    results = response.json()["data"]["result"]
+
+    if not results:
         return f"No metrics found for service: {service}"
 
-    return json.dumps(all_metrics[service])    # dict/list → JSON string (the LLM only accepts text)
-
+    return json.dumps(results);
 
 get_metrics_tool = {
     "type": "function",
@@ -79,6 +109,28 @@ get_metrics_tool = {
     },
 }
 
+def get_service_status() -> str:
+    result = subprocess.run(
+        ["docker","ps","-a","--format","{{.Names}}:{{.Status}}"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if result.returncode !=0:
+        return f"Could not get service status:{result.stderr}"
+
+    return result.stdout
+
+
+get_service_status_tool = {
+    "type":"function",
+    "function":{
+        "name":"get_service_status",
+        "description":"List all services/containers and whether each is running or stopped (Up / Exited).Use this when a service can't connect to another service, to check if that dependency is down.",
+        "parameters": {"type": "object", "properties": {}}, 
+    },
+}
+
 
 # ============================================================================
 # TOOL 3: get_recent_deploys (NEW, YOUR PART)
@@ -94,18 +146,7 @@ def get_recent_deploys() -> str:
 
     return json.dumps(all_deploy)
 
-
-get_recent_deploys_tool = {
-    "type": "function",
-    "function": {
-        "name": "get_recent_deploys",
-        "description": "List recent deployments and config changes across all services (time, service, version, what changed). Use this to answer 'what changed right before the problem started?'",
-        "parameters": {"type": "object", "properties": {}},    # no parameters
-    },
-}
-
-
-ALL_TOOLS = [read_logs_tool, get_metrics_tool, get_recent_deploys_tool]   # the "menu" sent to the LLM
+ALL_TOOLS = [read_logs_tool, get_metrics_tool, get_service_status_tool]   # the "menu" sent to the LLM
 
 # BLANK 2: map each tool NAME (the string the LLM sends) → the Python FUNCTION.
 #   Like a Java Map<String, Function>. Note: no () after the function name,
@@ -114,12 +155,15 @@ ALL_TOOLS = [read_logs_tool, get_metrics_tool, get_recent_deploys_tool]   # the 
 TOOLS = {
     "read_logs":read_logs,
     "get_metrics":get_metrics,
-    "get_recent_deploys":get_recent_deploys
+    "get_service_status": get_service_status
 }
 
 
 SYSTEM_PROMPT = (
-    "You are an on-call SRE assistant. Use the tools to investigate. "
+    "You are an on-call SRE assistant. You have access to tolls like get_cetrics, read_logs and service_status,"
+    "Use them to investigate. "
+    "Only state cause when u have evidence from the tools."
+    "If unsure say what u dont know but dont assume anything."
     "Check metrics to see when the problem started, logs to see what is failing, "
     "and recent deploys to see what changed. "
     "Don't stop at the first symptom: keep digging until you find the underlying root cause. "
