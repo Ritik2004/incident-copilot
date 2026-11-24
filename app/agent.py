@@ -1,31 +1,31 @@
 import subprocess
 import json
 import os
-
+from typing import Literal
+from pydantic import BaseModel, Field
 import time
 import httpx
 from dotenv import load_dotenv
-from groq import Groq
-PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", "http://localhost:9090")
+from groq import BadRequestError, Groq
 load_dotenv()
+PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", "http://localhost:9090")
+SERVICES = os.getenv("SERVICES", "").split(",")
 client = Groq(api_key=os.getenv("GROQ_API_KEY"), max_retries=5)   # NEW: auto-retry on 429 rate limits
 MODEL = "openai/gpt-oss-20b"
 LOG_DIR = "data/logs"
 
 
+
 # ============================================================================
 # TOOL 1: read_logs (yours, from Day 1)
 # ============================================================================
-# def read_logs(service: str) -> str:
-#     path = f"{LOG_DIR}/{service}.log"
-#     if not os.path.exists(path):
-#         return f"No logs found for service: {service}"
-#     with open(path) as file:
-#         return file.read()
 
 def read_logs(service:str) -> str:
+    if SERVICES != [""] and service not in SERVICES:
+      return f"Service '{service}' is not allowed. Allowed: {SERVICES}"
+
     result = subprocess.run(
-        ["docker","logs","--tail","500",service],
+        ["docker","logs","--since","2m","--tail","500",service],   # only the last 2 minutes
         capture_output=True,
         text=True,
         timeout=10,
@@ -68,6 +68,9 @@ read_logs_tool = {
 # TOOL 2: get_metrics (NEW, written for you as an example)
 # ============================================================================
 def get_metrics(service: str) -> str:
+    if SERVICES != [""] and service not in SERVICES:
+      return f"Service '{service}' is not allowed. Allowed: {SERVICES}"
+
 
     # with open("data/metrics.json") as file:
     #     all_metrics = json.load(file)          # json.load = read a JSON FILE into a dict (json.loads = from a STRING)
@@ -76,7 +79,8 @@ def get_metrics(service: str) -> str:
     #     return f"No metrics found for service: {service}"
 
     # return json.dumps(all_metrics[service])    # dict/list → JSON string (the LLM only accepts text)
-    query = f'http_server_requests_seconds_count{{job ="{service}", uri!~"/actuator.*"}}'
+    # increase(...[2m]) = how many requests in the LAST 2 MINUTES (not since the app started)
+    query = f'round(increase(http_server_requests_seconds_count{{job="{service}", uri!~"/actuator.*"}}[2m])) > 0'   # > 0 = hide rows with no requests
 
     response = httpx.get(
         f"{PROMETHEUS_URL}/api/v1/query",
@@ -87,7 +91,7 @@ def get_metrics(service: str) -> str:
     results = response.json()["data"]["result"]
 
     if not results:
-        return f"No metrics found for service: {service}"
+        return f"No requests recorded for {service} in the last 2 minutes"
 
     return json.dumps(results);
 
@@ -158,18 +162,42 @@ TOOLS = {
     "get_service_status": get_service_status
 }
 
+class IncidentReport(BaseModel):
+    root_cause: str = Field(description="One sentence: what broke and why")
+    root_cause_service: str = Field(description="The ONE service where the problem started, e.g. 'redis'")
+    affected_services: list[str] = Field(description="Services showing symptoms (errors, slowness)")
+    evidence: list[str] = Field(description="Exact log lines, metric values or status lines from tools")
+    confidence: Literal["low", "medium", "high"]
+    suggested_action: str = Field(description="The first safe action a human should take")
 
 SYSTEM_PROMPT = (
-    "You are an on-call SRE assistant. You have access to tolls like get_cetrics, read_logs and service_status,"
+    "You are an on-call SRE assistant. You have access to tools like get_metrics, read_logs and get_service_status,"
     "Use them to investigate. "
     "Only state cause when u have evidence from the tools."
     "If unsure say what u dont know but dont assume anything."
     "Check metrics to see when the problem started, logs to see what is failing, "
-    "and recent deploys to see what changed. "
+    "If a service's errors come from a call to another service, the root cause is that other service. "
     "Don't stop at the first symptom: keep digging until you find the underlying root cause. "
     "Quote log lines, metrics and timestamps as evidence."
 )
 
+
+
+def write_report(messages:list) -> IncidentReport:
+    messages.append({
+        "role":"user",
+        "content":"Now write the final incident report. Use only evidence you found with the tools."
+    })
+    response = client.chat.completions.create(
+        model=MODEL,
+        messages=messages,
+        response_format={
+            "type":"json_schema",
+            "json_schema":{"name":"incident_report","schema":IncidentReport.model_json_schema()}
+        },
+    )
+    text = response.choices[0].message.content
+    return IncidentReport.model_validate_json(text)
 
 # ============================================================================
 # The agent loop (yours, from Day 2) + tool lookup (NEW)
@@ -181,11 +209,17 @@ def run_agent(alert: str, max_steps: int = 6) -> str:
     ]
 
     for step in range(max_steps):
-        response = client.chat.completions.create(model=MODEL, messages=messages, tools=ALL_TOOLS)
+        for attempt in range(3):   # the model sometimes sends a broken tool call → Groq rejects it → ask again
+            try:
+                response = client.chat.completions.create(model=MODEL, messages=messages, tools=ALL_TOOLS)
+                break
+            except BadRequestError:
+                print("Bad tool call from model, retrying...")
         msg = response.choices[0].message
 
         if not msg.tool_calls:
-            return msg.content
+            messages.append(msg) 
+            return write_report(messages)
 
         messages.append(msg)
 
@@ -212,7 +246,7 @@ def run_agent(alert: str, max_steps: int = 6) -> str:
 
             messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": result})
 
-    return "Stopped: reached max_steps without a final answer."
+    return write_report(messages)
 
 
 if __name__ == "__main__":

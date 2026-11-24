@@ -1,0 +1,37 @@
+[
+  {
+    "name": "redis-down",
+    "break": "docker stop redis",
+    "fix": "docker start redis",
+    "alert": "ALERT: order-service error rate is above 5% for the last 2 minutes.",
+    "expected_root_cause_service": "redis"
+  },
+  {
+    "name": "payment-errors",
+    "break": "curl -s -X POST 'localhost:8081/chaos/errors?on=true'",
+    "fix": "curl -s -X POST localhost:8081/chaos/reset",
+    "alert": "ALERT: order-service error rate is above 5% for the last 2 minutes.",
+    "expected_root_cause_service": "payment-service"
+  },
+  {
+    "name": "payment-down",
+    "break": "docker stop payment-service",
+    "fix": "docker start payment-service",
+    "alert": "ALERT: order-service error rate is above 5% for the last 2 minutes.",
+    "expected_root_cause_service": "payment-service"
+  },
+  {
+    "name": "payment-slow",
+    "break": "curl -s -X POST 'localhost:8081/chaos/latency?ms=5000'",
+    "fix": "curl -s -X POST localhost:8081/chaos/reset",
+    "alert": "ALERT: order-service p95 latency is above 2 seconds for the last 2 minutes.",
+    "expected_root_cause_service": "payment-service"
+  },
+  {
+    "name": "no-incident",
+    "break": "",
+    "fix": "",
+    "alert": "ALERT: order-service error rate is above 5% for the last 2 minutes.",
+    "expected_root_cause_service": "none"
+  }
+]

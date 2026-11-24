@@ -5,6 +5,36 @@ Newest day at the top.
 
 ---
 
+## Day 6 (Nov 23): a structured report + the first eval score 📊
+
+**Goal:** stop judging the agent by "it worked once". Give it a number.
+
+### What I built
+- **`IncidentReport`** (Pydantic): `root_cause`, `root_cause_service`, `affected_services`, `evidence`, `confidence` (low/medium/high), `suggested_action`
+- **Two phases:** investigate with tools → then one more LLM call fills the form (Groq `response_format` = the Pydantic JSON schema → `model_validate_json`)
+- **`evals/scenarios.json`**: 5 incidents with known answers (redis-down, payment-errors, payment-down, payment-slow, no-incident)
+- **`evals/run_evals.py`**: break → send orders → run agent → compare `root_cause_service` → fix → score
+
+### 📊 Scores
+| Run | Score | What changed |
+|---|---|---|
+| 1 | **2/5** | 2 crashes (the model sent broken tool calls), no-incident blamed old errors |
+| 2 | **3/5** | retry on broken tool calls + tools only look at the **last 2 minutes** |
+
+Still failing: **payment-errors** (blamed order-service) and **no-incident** (the 30s wait between tests is shorter than the 2-minute window, so it saw the previous test's chaos logs).
+
+### 🧠 What I learned
+- **Field names and descriptions are part of the prompt.** `affected_services` was ambiguous, so the LLM left redis out. Fixed by adding `root_cause_service` + `Field(description=...)`.
+- **Evals catch what demos hide:** crashes, stale data, wrong blame.
+- **A wrong expected answer is the worst eval bug** (I copy-pasted "redis" into a payment scenario).
+- **LLMs sometimes send broken tool calls.** Retrying is normal production practice.
+- **Tools need a time window.** Old errors look exactly like new ones.
+
+### ⏭️ Next
+`time.sleep(130)` between scenarios, then fix the payment-errors blame with the prompt.
+
+---
+
 ## Day 5 (Nov 22): the agent investigates a REAL incident 🕵️
 
 **Goal:** stop reading fake files. Point the agent's tools at the real shop from Day 4.
