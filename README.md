@@ -93,7 +93,10 @@ We inject real failures (Redis going down, slow databases, bad deploys, memory l
 - [x] **The demo system:** order-service + payment-service (Spring Boot) + Redis + Prometheus, started with one `docker compose up`
 - [x] **Chaos switches:** make payments fail or slow down with one curl, and see real errors in the logs and metrics
 - [x] **The agent reads the real system:** `docker logs` (ERROR/WARN only), Prometheus metrics, and which containers are up or down. It correctly found "Redis container exited" on a live incident
-- [ ] A structured incident report (root cause, evidence, confidence, action)
+- [x] **A structured incident report** (Pydantic): root cause, root-cause service, evidence, confidence, suggested action
+- [x] **Evals:** 5 injected-failure scenarios with a known answer each, scored automatically (`python -m evals.run_evals`)
+- [x] **MCP server:** the tools work in any MCP client (Claude Code, Claude Desktop, Cursor), with an allow-list of services set in `.env`
+- [x] **LangGraph version** of the agent (`python -m app.graph_agent`): nodes + conditional edges + built-in retries
 - [ ] Kafka + notification-service, Postgres
 
 ---
@@ -125,6 +128,15 @@ It investigates the **live demo shop** below (start it first), printing each ste
 Set `PROMETHEUS_URL` in `.env` to use your own Prometheus (default `http://localhost:9090`).
 (`app/agent_v0.py` is the Day 1 single-tool-call version, kept for comparison.)
 
+### Use it from Claude Code / Claude Desktop / Cursor (MCP)
+
+```bash
+pip install "mcp[cli]"
+echo "SERVICES=order-service,payment-service,redis" >> .env   # only these containers can be read
+claude mcp add incident-copilot -e PYTHONPATH=$(pwd) -- $(pwd)/venv/bin/python -m app.mcp_server
+```
+Then ask: *"order-service is failing, investigate with the incident-copilot tools."*
+
 ### The demo shop (needs Docker)
 
 ```bash
@@ -153,5 +165,8 @@ curl -X POST localhost:8081/chaos/reset            # back to normal
 - **Most log lines are noise.** When I broke Redis, only 8 of 219 lines were ERROR/WARN. The rest were stack traces. An agent's log tool should filter before sending anything to the LLM.
 - **Always set timeouts.** With no timeout, one slow dependency made every order hang for 20 seconds. A fast error beats a hang.
 - **When an agent can't check, it guesses.** With no way to see whether Redis was running, my agent confidently blamed a Kubernetes rename (I don't use Kubernetes). One `get_service_status` tool plus "only claim what the evidence shows" fixed it.
+
+- **When an AI can't check, it can only say "probably".** A broken status tool made Claude say "likely Redis". Fixed, it said "confirmed".
+- **MCP makes tools reusable.** About 25 lines turned my agent's tools into something any AI app can use.
 
 More in the [daily log](DAILY_LOG.md).

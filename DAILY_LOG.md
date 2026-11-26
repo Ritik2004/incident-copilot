@@ -5,6 +5,63 @@ Newest day at the top.
 
 ---
 
+## Day 8 (Nov 26): my agent, rebuilt in LangGraph 🕸️
+
+**Goal:** learn LangGraph on an agent I already understand, before going multi-agent.
+
+### What I built
+[app/graph_agent.py](app/graph_agent.py): the same incident agent, now a graph:
+```
+START → llm ──tool calls?── yes → tools ─┐
+         ▲                                │
+         └────────────────────────────────┘
+         └── no → END
+```
+It found `redis: Exited` on a live incident, same as the hand-written loop.
+
+### 🧠 What I learned
+- **State** = one shared dict that every node reads and updates. `MessagesState` = just a `messages` list, and a node's returned messages get **appended**.
+- **Node** = a plain function (`add_node("llm", call_llm)` registers name → function).
+- **Edge** = the order (`add_edge(START, "llm")`). Edges use **names**, and LangGraph looks up the function at run time.
+- **Conditional edge** = an arrow with an if (`tools_condition`: tool calls → `tools`, otherwise → `END`). That replaces my `if not msg.tool_calls`.
+- **The `tools → llm` arrow *is* the loop.** No more `for step in range(...)`.
+- **Retries are built in:** `RetryPolicy(max_attempts=3, retry_on=BadRequestError)` replaced my hand-written try/except retry for Groq's broken tool calls.
+- **LangChain vs LangGraph:** LangChain = the parts (model wrapper `ChatGroq`, `@tool`, `bind_tools`). LangGraph = the flow.
+
+### 🐛 Bugs of the day
+- My node computed the LLM reply but didn't `return` it, so the reply never reached the state.
+- I drew `llm → END` instead of `tools → llm`, so there was no way back to the LLM after a tool ran.
+
+### ⏭️ Next
+A `write_report` node (structured IncidentReport), then a multi-agent supervisor.
+
+---
+
+## Day 7 (Nov 24): evals fixed + my tools as an MCP server 🔌
+
+**Goal:** fix two failing evals, then let *any* AI app use my tools, not just my own agent.
+
+### What I built
+- **Eval fixes:** wait 130s between scenarios (the tools look at the last 2 minutes, so a 30s wait left the previous scenario's errors visible), and a prompt rule: *"if a service's errors come from a call to another service, the root cause is that other service"*. The first 3 scenarios passed, including `payment-errors`, which failed before.
+- **An MCP server** ([app/mcp_server.py](app/mcp_server.py)): it wraps my 3 tools with `@mcp.tool()`. The docstring becomes the description, and the type hints become the schema. About 25 lines, reusing the functions from `agent.py`.
+- Tested it in the **MCP Inspector**, then plugged it into **Claude Code** (`claude mcp add`). Claude used my tools and confirmed: *"redis: Exited (0) 9 minutes ago. Exit code 0 means a clean stop, not a crash."*
+- **An allow-list from config:** `SERVICES=order-service,payment-service,redis` in `.env`. Any other container is refused, so it's safe to plug into someone else's machine.
+
+### 🐛 The bug of the day
+`get_service_status` had a `service` parameter in the MCP server, but the real function takes none, so every call crashed. Claude could only say *"likely Redis, not confirmed"*. After the fix it said *"confirmed"*. Same lesson as Day 5: when an AI can't check, it can only guess.
+
+### 🧠 What I learned
+- **MCP = USB-C for AI tools.** You write the tools once as a server, and any MCP client (Claude Code, Claude Desktop, Cursor, my own agent) can use them.
+- **Tools vs agent:** the MCP server is just the hands. The brain is whichever AI connects to it.
+- Under the hood: the client starts the server as a process and talks **JSON-RPC over stdio**: `tools/list`, then `tools/call`.
+- `mcp` 2.x renamed `FastMCP` → `MCPServer` (`from mcp.server.mcpserver import MCPServer`).
+- `load_dotenv()` must run **before** `os.getenv(...)`, or `.env` values are ignored.
+
+### ⏭️ Next
+Multi-agent with LangGraph: a supervisor plus specialist agents.
+
+---
+
 ## Day 6 (Nov 23): a structured report + the first eval score 📊
 
 **Goal:** stop judging the agent by "it worked once". Give it a number.

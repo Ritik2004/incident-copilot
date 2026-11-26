@@ -162,7 +162,51 @@ No hard-coded environment: endpoints like `PROMETHEUS_URL` come from config, sou
 
 ---
 
-## 7. The project pitch (have this ready)
+## 7. Structured output, evals and MCP
+
+**⭐ How do you get reliable structured output from an LLM?**
+Define the shape as a Pydantic model, send its JSON schema as `response_format`, then validate the reply with `model_validate_json()`. Field descriptions are part of the prompt. If validation fails, retry, or send the error back to the model.
+
+**⭐ How do you evaluate an agent?**
+Scenarios with known answers. I inject a failure (Redis down, payment errors, latency), run the agent, and compare `root_cause_service` with the expected one. That gives a score (2/5 → 3/5 → better), so prompt changes are measured, not guessed. Include a "no incident" case so it can't just always blame something.
+
+**My eval failed because of the test, not the agent. How?**
+The tools look at the last 2 minutes, but scenarios were only 30s apart, so the "no incident" run saw the previous scenario's errors. Evals need isolation between runs, just like unit tests.
+
+**⭐ What is MCP and why use it?**
+Model Context Protocol, a standard way to expose tools (and resources, and prompts) to any AI app. Without it, every app × every tool needs custom glue code. I wrapped my 3 tools as an MCP server, and Claude Code used them to find a Redis outage with no extra integration.
+
+**How does MCP work under the hood?**
+The client starts the server as a process (stdio transport) or connects over HTTP. They speak JSON-RPC: `tools/list` returns names, descriptions and schemas; `tools/call` runs one. In the Python SDK, `@mcp.tool()` builds the schema from type hints and the description from the docstring.
+
+**MCP server vs agent?**
+The server only has tools (hands). The agent is the LLM + loop (brain) that decides when to call them. One MCP server can serve many different agents.
+
+**How do you make an MCP server safe to plug into someone else's system?**
+Read-only tools, plus a config allow-list (`SERVICES` in `.env`), so the AI can only touch listed services. Anything risky (restarts) needs human approval.
+
+---
+
+## 8. LangGraph
+
+**⭐ What is LangGraph and why use it over a plain loop?**
+It models an agent as a graph: **state** (shared data), **nodes** (functions), **edges** (control flow). A plain loop is fine for one agent. LangGraph gives you multi-agent routing, human-in-the-loop interrupts, checkpointing (memory/resume), streaming and retries out of the box.
+
+**⭐ What are state, nodes and edges?**
+State = a typed dict passed through the graph. A node gets the state and returns an *update* (e.g. `{"messages": [reply]}`, which is appended). Edges set the order. Conditional edges choose the next node at runtime from a function's return value.
+
+**How is a ReAct agent drawn in LangGraph?**
+`START → llm`, conditional edge from `llm` (tool calls → `tools`, else → `END`), and `tools → llm`. That last edge is the loop.
+
+**LangChain vs LangGraph?**
+LangChain = building blocks (model wrappers, tools, structured output). LangGraph = orchestration (how the blocks are wired, with state). I use LangChain lightly, for `ChatGroq` + `@tool`, and LangGraph for the agent.
+
+**How did you handle flaky LLM calls in LangGraph?**
+A per-node `RetryPolicy(max_attempts=3, retry_on=BadRequestError)`. Groq sometimes rejects malformed tool calls from the model, and the node just reruns.
+
+---
+
+## 9. The project pitch (have this ready)
 
 **⭐ "Tell me about a project you built."**
 > *"I'm building an AI SRE: a multi-agent system that investigates production incidents. An alert comes in, a supervisor agent sends specialist agents to check logs, metrics, recent deploys and runbooks, and it produces a root-cause report with evidence. Risky actions like restarts need human approval. I test it by injecting real failures into a Spring Boot + Kafka + Redis system, and since each failure has a known root cause, I can measure accuracy."*
